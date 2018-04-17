@@ -123,12 +123,18 @@ def parseGQLS(input_array)
         if type == "ID"
           type = "Int"
           data["from_dict_mapping"] << "self.#{camel_name} = try mapper.value(key: \"#{name}\", #{is_optional == true ? "transformOptionalType" : "transformType"}: TransformTypes.stringToInt)"
+          data["inset_from_dict_mapping"] << "#{camel_name} <- try mapper.value(key: \"#{name}\", #{is_optional == true ? "transformOptionalType" : "transformType"}: TransformTypes.stringToInt, type: #{type}#{optional}.self)"
           if name == "id"
             data["create_table"] << "tableBuilder.column(#{camel_name}, primaryKey: true)"
           else
-            data["create_table"] << "tableBuilder.column(#{camel_name}, unique: true)"
+            data["create_table"] << "tableBuilder.column(#{camel_name})"
           end
         else
+          if type == "JSON"
+            data["inset_from_dict_mapping"] << "#{camel_name} <- try? encode(try mapper.value(key: \"#{name}\", type: JSON?.self))"
+          else
+            data["inset_from_dict_mapping"] << "#{camel_name} <- try mapper.value(key: \"#{name}\", type: #{type}#{optional}.self)"
+          end
           data["from_dict_mapping"] << "self.#{camel_name} = try mapper.value(key: \"#{name}\")"
           data["create_table"] << "tableBuilder.column(#{camel_name})"
         end
@@ -139,19 +145,17 @@ def parseGQLS(input_array)
           data["table_fields"] << "static let #{camel_name} = Expression<#{type}#{optional}>(\"#{camel_name}\")"
           data["row_mapping"] << "self.#{camel_name} = try Type.decode(data: row.get(Type.#{camel_name}))"
           data["row_mapping_with_table"] << "self.#{camel_name} = try Type.decode(data: row.get(t[Type.#{camel_name}]))"
-          data["inset_mapping"] << "#{camel_name} <- try? encode(object.#{camel_name})"
-          data["update_mapping"] << "#{camel_name} <- try? encode(object.#{camel_name})"
-          data["inset_from_dict_mapping"] << "#{camel_name} <- try? encode(try mapper.value(key: \"#{name}\", type: JSON?.self))"
+          data["inset_mapping"] << "Type.#{camel_name} <- try? Type.encode(self.#{camel_name})"
+          data["update_mapping"] << "Type.#{camel_name} <- try? Type.encode(self.#{camel_name})"
         else
           data["object_vairebles"] << "var #{camel_name}: #{type}#{optional}"
           data["table_fields"] << "static let #{camel_name} = Expression<#{type}#{optional}>(\"#{camel_name}\")"
           data["row_mapping"] << "self.#{camel_name} = try row.get(Type.#{camel_name})"
           data["row_mapping_with_table"] << "self.#{camel_name} = try row.get(t[Type.#{camel_name}])"
-          data["inset_mapping"] << "#{camel_name} <- object.#{camel_name}"
+          data["inset_mapping"] << "Type.#{camel_name} <- self.#{camel_name}"
           if name != "id"
-            data["update_mapping"] << "#{camel_name} <- object.#{camel_name}"
+            data["update_mapping"] << "Type.#{camel_name} <- self.#{camel_name}"
           end
-          data["inset_from_dict_mapping"] << "#{camel_name} <- try mapper.value(key: \"#{name}\", type: #{type}#{optional}.self)"
         end
       end
       result[key] = data
@@ -179,11 +183,13 @@ def parseGQLS(input_array)
 
       puts path
       generated_file = File.open("#{path}.swift", 'w')
-      class_body = "
+      class_body = "// generated class by https://github.com/Lumyk/simple-code-gen
+import Foundation
 import SQLite
 import apollo_mapper
+import sqlite_helper
 
-class #{class_name}: Storeble {
+class #{class_name}: Savable {
     #{object_vairebles}
 
     // Mappable
@@ -200,7 +206,7 @@ class #{class_name}: Storeble {
             #{row_mapping}
         } catch {
             do {
-                let t = Type.table()
+                let t = Type.table
                 #{row_mapping_with_table}
             } catch let error {
                 throw error
@@ -212,7 +218,8 @@ class #{class_name}: Storeble {
         #{create_table}
     }
 
-    static func insertMapper(object: #{class_name}) -> [Setter] {
+    func insertMapper() -> [Setter] {
+        let Type = type(of: self)
         return [
             #{inset_mapping}
         ]
@@ -224,7 +231,8 @@ class #{class_name}: Storeble {
         ]
     }
 
-    static func updateMapper(object: #{class_name}) -> [Setter] {
+    func updateMapper() -> [Setter] {
+        let Type = type(of: self)
         return [
             #{update_mapping}
         ]
