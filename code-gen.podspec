@@ -1,7 +1,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'code-gen'
-  s.version          = '0.0.1'
+  s.version          = '0.0.2'
   s.summary          = 'code-gen.'
   s.description      = 'code-gen.'
 
